@@ -1,67 +1,68 @@
+// main.rs - Android Device Monitor in Rust (using ADB)
+// Minimal dependencies: just Command for running adb
 use std::process::Command;
-use std::thread;
 use std::time::Duration;
+use std::thread;
 
-fn adb_shell(cmd: &str) -> String {
-    let output = Command::new("adb")
-        .arg("shell")
-        .arg(cmd)
+fn adb(cmd: &str) -> String {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("adb shell {}", cmd))
         .output()
-        .unwrap_or_default();
+        .expect("Failed to run adb");
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
-fn get_cpu_info() -> String {
-    adb_shell("top -n 1 | head -15")
+fn get_device_info() {
+    println!("\n📱 Android Device Monitor\n");
+    
+    let model = adb("getprop ro.product.model").trim().to_string();
+    let android = adb("getprop ro.build.version.release").trim().to_string();
+    let serial = adb("getprop ro.serialno").trim().to_string();
+    
+    println!("Device:  {}", model);
+    println!("Android: {}", android);
+    println!("Serial:  {}\n", serial);
 }
 
-fn get_memory_info() -> String {
-    adb_shell("cat /proc/meminfo | head -5")
+fn monitor_cpu() {
+    let freq = adb("cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
+    let cores = adb("nproc");
+    println!("CPU Freq: {} kHz | Cores: {}", freq.trim(), cores.trim());
 }
 
-fn get_battery_info() -> String {
-    adb_shell("dumpsys battery | grep -E 'level|health|temperature'")
+fn monitor_memory() {
+    let mem = adb("cat /proc/meminfo | head -3");
+    println!("Memory:\n{}", mem);
 }
 
-fn get_temp_info() -> String {
-    adb_shell("cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 'N/A'")
+fn monitor_battery() {
+    let level = adb("dumpsys battery | grep 'level:'");
+    let status = adb("dumpsys battery | grep 'status:'");
+    let temp = adb("dumpsys battery | grep 'temperature:'");
+    println!("Battery: {}{}{}", level.trim(), status.trim(), temp.trim());
 }
 
-fn get_network_info() -> String {
-    adb_shell("cat /proc/net/dev | grep -E 'eth|wlan' | head -3")
+fn monitor_network() {
+    let wifi = adb("dumpsys wifi | grep 'mWifiInfo' | grep -oP 'SSID: \\K[^,]+' | head -1");
+    let ip = adb("ip route | grep src | awk '{print $NF}' | head -1");
+    println!("Network: WiFi={} | IP={}", wifi.trim(), ip.trim());
 }
 
 fn main() {
-    println!("\n📊 Android Device Monitor — Rust Edition\n");
+    get_device_info();
     
     loop {
-        println!("═══════════════════════════════════════");
-        println!("⏱  {}", chrono::Local::now().format("%H:%M:%S"));
-        println!("═══════════════════════════════════════\n");
-
-        println!("🖥️  CPU (top 5):");
-        println!("{}", get_cpu_info());
-
-        println!("\n💾 Memory:");
-        println!("{}", get_memory_info());
-
-        println!("\n🔋 Battery:");
-        println!("{}", get_battery_info());
-
-        println!("\n🌡️  Temperature:");
-        let temp = get_temp_info();
-        if let Ok(t) = temp.trim().parse::<u32>() {
-            let celsius = t / 1000;
-            println!("  {}°C", celsius);
-            if celsius > 45 {
-                println!("  ⚠️  WARNING: High temperature!");
-            }
-        }
-
-        println!("\n📡 Network I/O:");
-        println!("{}", get_network_info());
-
-        println!("\n(Press Ctrl+C to stop. Updates every 3 seconds)\n");
-        thread::sleep(Duration::from_secs(3));
+        println!("\n{}", "─".repeat(50));
+        println!("Time: {}", chrono::Local::now().format("%H:%M:%S"));
+        println!("{}", "─".repeat(50));
+        
+        monitor_cpu();
+        monitor_memory();
+        monitor_battery();
+        monitor_network();
+        
+        println!("\nPress Ctrl+C to stop");
+        thread::sleep(Duration::from_secs(2));
     }
 }
